@@ -1,82 +1,119 @@
 package com.blazebrain.reminderapp
 
-
-import androidx.appcompat.app.AppCompatActivity
+import android.Manifest
+import android.annotation.SuppressLint
+import android.app.DatePickerDialog
 import android.os.Bundle
-import android.widget.*
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import com.blazebrain.reminderapp.databinding.ActivityMainBinding
 import com.blazebrain.reminderapp.util.ReminderWorker
-import java.util.*
+import com.blazebrain.reminderapp.util.isPermissionGranted
+import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
 class MainActivity : AppCompatActivity() {
-        override fun onCreate(savedInstanceState: Bundle?) {
+    private var _binding: ActivityMainBinding? = null
+    private val binding: ActivityMainBinding get() = _binding!!
+
+    private val permissionResultLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { permission ->
+        // Handle Permission granted/rejected
+        /* no op*/
+        if(!permission){
+            Toast.makeText(this, "Please allow permission to get notification", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    @SuppressLint("InlinedApi")
+    private fun checkPermission() {
+        if (!isPermissionGranted(this)) {
+              permissionResultLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            return
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-    // 1 Create Variables to hold user's selection
+        _binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+        val today = Calendar.getInstance()
+        // 1 Create Variables to hold user's selection
         var chosenYear = 0
         var chosenMonth = 0
         var chosenDay = 0
         var chosenHour = 0
         var chosenMin = 0
 
-    // 2 Access View Components using their Id
-        val descriptionText = findViewById<EditText>(R.id.editText)
-        val button = findViewById<Button>(R.id.setBtn)
-        val datePicker = findViewById<DatePicker>(R.id.datePicker)
-        val timePicker = findViewById<TimePicker>(R.id.timePicker)
-        val today = Calendar.getInstance()
-
-    // 3 initialize of datePicker using the current day as starting parameters and then
-            // pass the userSelected to the variables created
-        datePicker.init(today.get(Calendar.YEAR), today.get(Calendar.MONTH),
-            today.get(Calendar.DAY_OF_MONTH)
-        ) { _, year, month, day ->
-            chosenYear = year
-            chosenMonth = month
-            chosenDay = day
+        checkPermission()
+        binding.btnSelectDate.setOnClickListener {
+            val datePickerDialog = DatePickerDialog(
+                // on below line we are passing context.
+                this,
+                { _, year, monthOfYear, dayOfMonth ->
+                    // on below line we are setting
+                    // date to our text view.
+                    chosenYear = year
+                    chosenMonth = monthOfYear
+                    chosenDay = dayOfMonth
+                },
+                // on below line we are passing year, month
+                // and day for the selected date in our date picker.
+                today.get(Calendar.YEAR), today.get(Calendar.MONTH),
+                today.get(Calendar.DAY_OF_MONTH)
+            )
+            // at last we are calling show
+            // to display our date picker dialog.
+            datePickerDialog.show()
         }
-    // 4 Add the Listener to gain access to user selection in the TimePicker and
-            // then assign the selected values to the variables created above
-        timePicker.setOnTimeChangedListener { _, hour, minute ->
+        // 4 Add the Listener to gain access to user selection in the TimePicker and
+        // then assign the selected values to the variables created above
+        binding.timePicker.setOnTimeChangedListener { _, hour, minute ->
             chosenHour = hour
-            chosenMin  = minute
+            chosenMin = minute
         }
 
-    // 5 Add the Listener to listen to click events and execute the code to setNotification
-        button.setOnClickListener {
-
-            // 6 Get the DateTime the user selected
-            val userSelectedDateTime =Calendar.getInstance()
-            userSelectedDateTime.set(chosenYear, chosenMonth, chosenDay, chosenHour , chosenMin)
-
-            // 7 Next get DateTime for today
-            val todayDateTime = Calendar.getInstance()
-
-            // 8
-            val delayInSeconds = (userSelectedDateTime.timeInMillis/1000L) - (todayDateTime.timeInMillis/1000L)
-
-            // 9
-            createWorkRequest(descriptionText.text.toString(), delayInSeconds)
-
-            // 10
-            Toast.makeText(this, "Reminder set", Toast.LENGTH_SHORT).show()
+        // 5 Add the Listener to listen to click events and execute the code to setNotification
+        binding.btnSet.setOnClickListener {
+            if (chosenYear == 0) {
+                Toast.makeText(this, "Please select date", Toast.LENGTH_SHORT).show()
+            } else if (binding.etMsg.text.isNullOrEmpty()) {
+                Toast.makeText(this, "Please enter message", Toast.LENGTH_SHORT).show()
+            } else {
+                val userSelectedDateTime = Calendar.getInstance()
+                userSelectedDateTime.set(chosenYear, chosenMonth, chosenDay, chosenHour, chosenMin)
+                val todayDateTime = Calendar.getInstance()
+                val delayInSeconds =
+                    (userSelectedDateTime.timeInMillis / 1000L) - (todayDateTime.timeInMillis / 1000L)
+                createWorkRequest(binding.etMsg.text.toString(), delayInSeconds)
+                Toast.makeText(this, "Reminder set", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     // Private Function to create the OneTimeWorkRequest
-    private fun createWorkRequest(message: String,timeDelayInSeconds: Long  ) {
+    private fun createWorkRequest(message: String, timeDelayInSeconds: Long) {
         val myWorkRequest = OneTimeWorkRequestBuilder<ReminderWorker>()
             .setInitialDelay(timeDelayInSeconds, TimeUnit.SECONDS)
-            .setInputData(workDataOf(
-                "title" to "Reminder",
-                "message" to message,
-            )
+            .setInputData(
+                workDataOf(
+                    "title" to "Reminder",
+                    "message" to message,
+                )
             )
             .build()
 
         WorkManager.getInstance(this).enqueue(myWorkRequest)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        _binding = null
     }
 }
